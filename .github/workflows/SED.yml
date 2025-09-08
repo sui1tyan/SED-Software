@@ -1,0 +1,70 @@
+name: Build SED App (Windows exe + source zip)
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+
+permissions:
+  contents: write  # needed for releasing on tag
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build EXE (PyInstaller)
+        run: python build_exe.py
+
+      - name: Package source zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $items = @(
+            "backend",
+            "gui",
+            "requirements.txt",
+            "README.md",
+            "build_exe.py",
+            "setup_windows.bat",
+            "config.json"
+          )
+          Compress-Archive -Path $items -DestinationPath "SED_Project_v2_source.zip" -Force
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SED_App_v2-windows
+          path: |
+            dist/SED_App_v2.exe
+            SED_Project_v2_source.zip
+            README.md
+
+      - name: Create GitHub Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/SED_App_v2.exe
+            SED_Project_v2_source.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
