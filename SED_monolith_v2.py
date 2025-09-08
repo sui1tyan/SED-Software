@@ -10,6 +10,7 @@ import tkinter.ttk as ttk
 from tkinter import messagebox, filedialog
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+from pathlib import Path
 
 # ---- Third-party (install via pip) ----
 try:
