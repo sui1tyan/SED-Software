@@ -1,0 +1,99 @@
+name: Build SED Monolith
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Locate monolith script (SED_monolith_v2.py)
+        shell: pwsh
+        run: |
+          $c = Get-ChildItem -Path $PWD -Recurse -File -Filter SED_monolith_v2.py | Select-Object -First 1
+          if (-not $c) { Write-Error "SED_monolith_v2.py not found anywhere in repo"; exit 1 }
+          $dir = $c.Directory.FullName
+          "APP_SCRIPT=$($c.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_DIR_UNIX=$($dir -replace '\\','/')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Monolith path: $($c.FullName)"
+
+      - name: Install dependencies
+        shell: pwsh
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          python -m pip install --upgrade pip
+          if (Test-Path "requirements.txt") {
+            pip install -r requirements.txt
+          } else {
+            pip install customtkinter==5.2.2 mysql-connector-python reportlab pyinstaller
+          }
+
+      - name: Build EXE with PyInstaller
+        shell: pwsh
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          pyinstaller --noconfirm --onefile --windowed `
+            --name SED_Monolith_v2 `
+            "$env:APP_SCRIPT"
+          if (-not (Test-Path "$env:APP_DIR\\dist\\SED_Monolith_v2.exe")) {
+            Write-Error "EXE not produced"; exit 1
+          }
+
+      - name: Prepare release bundle (exe + sample config)
+        shell: pwsh
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          $release = Join-Path $env:APP_DIR "release"
+          New-Item -ItemType Directory -Path $release -Force | Out-Null
+          @"
+          {
+            "db": {
+              "host": "localhost",
+              "port": 3306,
+              "user": "root",
+              "password": "",
+              "database": "sed_db"
+            }
+          }
+          "@ | Out-File -FilePath (Join-Path $release "config.json") -Encoding utf8
+          Copy-Item "$env:APP_DIR\\dist\\SED_Monolith_v2.exe" (Join-Path $release "SED_Monolith_v2.exe") -Force
+          if (Test-Path "$env:APP_DIR\\README.md") { Copy-Item "$env:APP_DIR\\README.md" (Join-Path $release "README.md") -Force }
+          Compress-Archive -Path "$release\\*" -DestinationPath (Join-Path $env:APP_DIR "SED_Monolith_v2-windows.zip") -Force
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SED_Monolith_v2-windows
+          path: |
+            ${{ env.APP_DIR_UNIX }}/dist/SED_Monolith_v2.exe
+            ${{ env.APP_DIR_UNIX }}/SED_Monolith_v2-windows.zip
+
+      - name: Create GitHub Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.APP_DIR_UNIX }}/dist/SED_Monolith_v2.exe
+            ${{ env.APP_DIR_UNIX }}/SED_Monolith_v2-windows.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
