@@ -41,15 +41,11 @@ jobs:
         working-directory: ${{ env.PROJ_DIR }}
         run: |
           python -m pip install --upgrade pip
-          if (-not (Test-Path "requirements.txt")) {
-            @'
-customtkinter==5.2.2
-mysql-connector-python
-reportlab
-pyinstaller
-'@ | Out-File -Encoding utf8 requirements.txt
+          if (Test-Path "requirements.txt") {
+            pip install -r requirements.txt
+          } else {
+            pip install customtkinter==5.2.2 mysql-connector-python reportlab pyinstaller
           }
-          pip install -r requirements.txt
 
       - name: Build EXE (PyInstaller)
         shell: pwsh
@@ -61,7 +57,9 @@ pyinstaller
         working-directory: ${{ env.PROJ_DIR }}
         run: |
           $items = @('backend','gui','requirements.txt','README.md','build_exe.py','setup_windows.bat','config.json')
-          Compress-Archive -Path $items -DestinationPath "SED_Project_v2_source.zip" -Force
+          $existing = $items | Where-Object { Test-Path $_ }
+          if ($existing.Count -eq 0) { Write-Error "No source items found to zip"; exit 1 }
+          Compress-Archive -Path $existing -DestinationPath "SED_Project_v2_source.zip" -Force
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
