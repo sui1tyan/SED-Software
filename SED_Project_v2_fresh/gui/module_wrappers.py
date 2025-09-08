@@ -16,4 +16,6 @@ def list_profil_records(unit=None,name=None,status=None):
     if unit: return _with_conn(mod_profil_records.list_by_unit, unit)
     if name: return _with_conn(mod_profil_records.search_by_name, name)
     if status == "tidak_aktif": return _with_conn(mod_profil_records.list_inactive)
+    if status == "aktif": return _with_conn(mod_profil_input.list_profils, status)
+    if status: return _with_conn(mod_profil_input.list_profils, status)
     return _with_conn(mod_profil_input.list_profils)
